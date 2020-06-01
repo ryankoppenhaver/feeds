@@ -1,9 +1,13 @@
 from flask import Flask, Response, abort, redirect, render_template, request
 from flask_pymongo import PyMongo
+from bson.objectid import ObjectId
+from pymongo.cursor import Cursor
 import pymongo
 import json
 import os
 import hmac
+import datetime
+import time
 
 app = Flask('feeds')
 app.config.update({
@@ -25,15 +29,13 @@ def require_auth():
     if not hmac.compare_digest(request.form['key'], app.config[SECRET_KEY]):
         abort(403)
 
-def clean_mongo(dict):
-    if 'ts' in dict:
-        dict['ts'] = dict['ts'].timestamp()
-    if 'transcriptions' in dict:
-        dict['transcriptions'] = [clean_mongo(t) for t in dict['transcriptions']]
-    if '_id' in dict:
-        dict['id'] = str(dict['_id'])
-        del dict['_id']
-    return dict
+def json_unknown(obj):
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, Cursor):
+        return list(obj)
+    elif isinstance(obj, datetime.datetime):
+        return time.mktime(obj.timetuple())
 
 @app.route('/')
 def slash():
@@ -67,8 +69,8 @@ def get_feed(feed_id):
 def get_feed_text(feed_id):
     if request.method == 'GET':
         calls = _get_feed(feed_id)
-        calls = [clean_mongo(c) for c in calls]
-        return Response(json.dumps(calls), mimetype='text/json')
+        out = json.dumps(calls, default=json_unknown)
+        return Response(out, mimetype='text/json')
     elif request.method == 'POST':
         require_auth()
 
